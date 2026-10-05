@@ -1,0 +1,10 @@
+node_modules
+**/node_modules
+**/generated
+**/dist
+**/.next
+storage
+backups
+test-results
+pnpm-lock.yaml
+.env*

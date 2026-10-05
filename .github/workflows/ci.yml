@@ -1,0 +1,39 @@
+name: Phase 1 checks
+on: [push, pull_request]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.11-bookworm
+        env:
+          POSTGRES_DB: jobhunt
+          POSTGRES_USER: jobhunt_local
+          POSTGRES_PASSWORD: ci-only-synthetic-password-not-a-secret
+        ports: ['45432:5432']
+        options: --health-cmd="pg_isready -U jobhunt_local -d jobhunt" --health-interval=5s --health-timeout=3s --health-retries=12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --global pnpm@11.21.0
+      - run: pnpm install --frozen-lockfile
+      - name: Configure synthetic test environment
+        run: |
+          cp .env.example .env
+          sed -i 's/replace_with_a_random_local_password/ci-only-synthetic-password-not-a-secret/; s/replace_with_a_random_session_secret/ci-only-session-secret-with-sufficient-length/; s/replace_with_a_random_owner_password/ci-only-owner-password/' .env
+      - run: pnpm db:generate && pnpm db:migrate
+      - run: pnpm lint && pnpm typecheck && pnpm test && pnpm build
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Run browser journey
+        run: |
+          pnpm --filter @jobhunt/api start > /tmp/job-api.log 2>&1 &
+          pnpm --filter @jobhunt/web start > /tmp/job-web.log 2>&1 &
+          for i in $(seq 1 30); do if curl -fsS http://127.0.0.1:43170 >/dev/null && curl -fsS http://127.0.0.1:43171/api/v1/health/ready >/dev/null; then break; fi; sleep 1; done
+          pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-failures
+          path: test-results/

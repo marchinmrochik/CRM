@@ -1,0 +1,61 @@
+# Dependencies and generated builds
+node_modules/
+.pnpm-store/
+.next/
+out/
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+apps/api/src/generated/
+apps/web/next-env.d.ts
+
+# Secrets (keep sanitized examples)
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+.npmrc
+.pnpmrc
+
+# Private runtime data and generated documents
+/storage/
+/backups/
+/exports/
+/logs/
+/tmp/
+/temp/
+*.log
+*.dump
+*.sql.gz
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-wal
+*.db-shm
+
+# Verification artifacts
+coverage/
+playwright-report/
+test-results/
+blob-report/
+
+# Machine-specific files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+.codex/
+.agents/
+.claude/
+*.swp
+*.swo
+
+# Keep package manager lockfiles, migrations, and synthetic fixtures tracked.

@@ -1,0 +1,111 @@
+name: jobhunt-crm
+
+services:
+  postgres:
+    image: postgres:17.11-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Run scripts/db.ps1 init first}
+      POSTGRES_USER: ${POSTGRES_USER:?Run scripts/db.ps1 init first}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run scripts/db.ps1 init first}
+      POSTGRES_INITDB_ARGS: --data-checksums
+    ports:
+      - '127.0.0.1:${POSTGRES_PORT:-45432}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    stop_grace_period: 30s
+    shm_size: 128mb
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  migrate:
+    profiles: [app]
+    build:
+      context: .
+      target: api
+    env_file: .env
+    environment:
+      DATABASE_HOST: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: [pnpm, --filter, '@jobhunt/api', db:migrate]
+    restart: 'no'
+
+  api:
+    profiles: [app]
+    build:
+      context: .
+      target: api
+    env_file: .env
+    environment:
+      DATABASE_HOST: postgres
+      API_BIND_HOST: 0.0.0.0
+      STORAGE_PATH: /workspace/storage/resumes
+    ports:
+      - '127.0.0.1:43171:43171'
+    volumes:
+      - ./storage/resumes:/workspace/storage/resumes
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:43171/api/v1/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  web:
+    profiles: [app]
+    build:
+      context: .
+      target: web
+    environment:
+      API_INTERNAL_URL: http://api:43171
+    ports:
+      - '127.0.0.1:43170:43170'
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:43170').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+volumes:
+  postgres_data:

@@ -1,0 +1,130 @@
+generator client {
+  provider = "prisma-client"
+  output = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ApplicationStatus {
+  draft
+  applied
+  in_progress
+  offer_received
+  accepted
+  rejected
+  withdrawn
+}
+
+model Company {
+  id String @id @default(uuid())
+  ownerId String
+  name String
+  website String?
+  archived Boolean @default(false)
+  createdAt DateTime @default(now())
+  vacancies Vacancy[]
+  @@index([ownerId, name])
+}
+
+model Vacancy {
+  id String @id @default(uuid())
+  ownerId String
+  companyId String
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  title String
+  url String?
+  source String @default("Manual")
+  description String
+  location String @default("Unknown")
+  workMode String @default("remote")
+  eligibility String @default("unknown")
+  disposition String @default("inbox")
+  availability String @default("unknown")
+  createdAt DateTime @default(now())
+  applications Application[]
+  @@index([ownerId, disposition, createdAt])
+}
+
+model Application {
+  id String @id @default(uuid())
+  ownerId String
+  vacancyId String
+  vacancy Vacancy @relation(fields: [vacancyId], references: [id], onDelete: Restrict)
+  vacancySnapshot Json
+  status ApplicationStatus @default(draft)
+  submittedAt DateTime?
+  resumeId String?
+  resume ResumeArtifact? @relation(fields: [resumeId], references: [id], onDelete: Restrict)
+  noResume Boolean @default(false)
+  revision Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  events ApplicationEvent[]
+  notes Note[]
+  actions NextAction[]
+  interviews Interview[]
+  @@index([ownerId, status, submittedAt])
+}
+
+model ApplicationEvent {
+  id String @id @default(uuid())
+  applicationId String
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  type String
+  label String
+  metadata Json
+  occurredAt DateTime @default(now())
+  recordedAt DateTime @default(now())
+  actor String
+  @@index([applicationId, occurredAt])
+}
+
+model Note {
+  id String @id @default(uuid())
+  applicationId String
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  content String
+  createdAt DateTime @default(now())
+}
+
+model NextAction {
+  id String @id @default(uuid())
+  applicationId String
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  title String
+  dueAt DateTime
+  completedAt DateTime?
+}
+
+model Interview {
+  id String @id @default(uuid())
+  applicationId String
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  type String
+  scheduledAt DateTime
+  timezone String
+  status String @default("scheduled")
+  outcome String?
+}
+
+model ResumeArtifact {
+  id String @id @default(uuid())
+  ownerId String
+  name String
+  storageKey String @unique
+  checksum String
+  size Int
+  createdAt DateTime @default(now())
+  applications Application[]
+}
+
+model Session {
+  sid String @id @db.VarChar(255)
+  sess Json @db.Json
+  expire DateTime @db.Timestamp(6)
+  @@index([expire], map: "session_expire_idx")
+  @@map("session")
+}
