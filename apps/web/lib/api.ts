@@ -23,6 +23,12 @@ export async function api<T>(path: string, body?: unknown, method = 'POST'): Pro
     credentials: 'same-origin',
   });
   if (!response.ok) {
+    if (
+      response.status === 401 &&
+      typeof window !== 'undefined' &&
+      !['auth/me', 'auth/login'].includes(path)
+    )
+      window.dispatchEvent(new Event('jobhunt:session-expired'));
     const error = await response
       .json()
       .catch(() => ({ message: 'Cannot reach the API. Check System activity and retry.' }));
@@ -60,6 +66,7 @@ export interface Resume {
   id: string;
   name: string;
   size: number;
+  version?: { id: string; number: number; name: string };
 }
 export interface Action {
   id: string;
@@ -86,7 +93,14 @@ export interface Application {
   vacancySnapshot: { title: string; company: string; description: string; url?: string };
   resume?: Resume;
   noResume: boolean;
-  events: { id: string; label: string; occurredAt: string; recordedAt: string }[];
+  events: {
+    id: string;
+    type: string;
+    metadata: Record<string, unknown>;
+    label: string;
+    occurredAt: string;
+    recordedAt: string;
+  }[];
   notes: { id: string; content: string; createdAt: string }[];
   actions: Action[];
   interviews: Interview[];

@@ -1,18 +1,20 @@
 # Infrastructure and Operations
 
+Phase 3 introduces Redis 8 with AOF/no eviction and the separate worker in the `app` Compose profile. The worker shares the API image/package and ignored `storage/resumes` bind mount. All published ports remain loopback-only and follow the allocation below. Host launcher `scripts/app.ps1` also starts the compiled worker; start Redis separately before host mode. Recovery verification is available through `scripts/verify-operations.mjs`.
+
 ## Local development topology
 
 PostgreSQL runs in Docker Compose from the first executable phase. Web/API initially run on the host for fast development feedback. A complete containerized app profile is added before the first reviewable CRM release. Redis and a worker are introduced only when durable asynchronous processing is implemented.
 
 ## Reserved project ports
 
-| Service | Host binding | Container/internal port | Introduction |
-| --- | --- | --- | --- |
-| Web | `127.0.0.1:43170` | `43170` | Phase 1 |
-| API | `127.0.0.1:43171` | `43171` | Phase 1 |
-| Worker health | `127.0.0.1:43172` | `43172` | Phase 3 |
-| PostgreSQL | `127.0.0.1:45432` | `5432` | Phase 1 |
-| Redis | `127.0.0.1:46379` | `6379` | Phase 3 |
+| Service       | Host binding      | Container/internal port | Introduction |
+| ------------- | ----------------- | ----------------------- | ------------ |
+| Web           | `127.0.0.1:43170` | `43170`                 | Phase 1      |
+| API           | `127.0.0.1:43171` | `43171`                 | Phase 1      |
+| Worker health | `127.0.0.1:43172` | `43172`                 | Phase 3      |
+| PostgreSQL    | `127.0.0.1:45432` | `5432`                  | Phase 1      |
+| Redis         | `127.0.0.1:46379` | `6379`                  | Phase 3      |
 
 Standard database ports are allowed only inside the isolated Docker network. No project service binds a default host port. Host ports `3000`, `5000`, `8000`, and `1433` are explicitly prohibited. Any future service must receive a documented non-default host port before being added.
 
@@ -61,3 +63,7 @@ GitHub Actions runs frozen-lockfile install, lint, typecheck, unit tests, Postgr
 Deploy target remains open until the owner chooses a budget and hosting model. Keep one web app, one modular API, managed or containerized PostgreSQL, private artifact storage, and later one worker/Redis deployment. Production uses HTTPS ingress and private database networking; local reserved ports are not a requirement to expose production services publicly.
 
 Before external deployment, define authentication, backup/restore, migration rollback or forward recovery, log retention, and secret management. Demonstration and personal production environments must remain isolated.
+
+## Isolated browser verification
+
+The standalone demo has been removed. `compose.e2e.yaml` runs a disposable test database on 45442 and test web/API on 43180/43181. It uses synthetic test-only credentials and a separate PDF volume, without `.env` or personal mounts. `node scripts/test-e2e.mjs` starts this stack, runs browser tests, and removes only its containers and test volume. Build the owner images first. The normal owner stack remains available during browser verification. Hosting remains deferred.

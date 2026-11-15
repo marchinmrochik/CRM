@@ -28,7 +28,10 @@ async function request(path) {
   return response;
 }
 const before = await (await request('export/json')).json();
-const resume = before.resumes[0];
+const beforeAnalytics = await (await request('analytics')).json();
+const generatedArtifacts = new Set(before.resumeVersions.map((version) => version.artifactId));
+const resume =
+  before.resumes.find((artifact) => generatedArtifacts.has(artifact.id)) ?? before.resumes[0];
 const digest = async (id) =>
   createHash('sha256')
     .update(Buffer.from(await (await request(`resumes/${id}/download`)).arrayBuffer()))
@@ -44,17 +47,42 @@ function docker(args) {
 }
 docker(['restart', 'postgres']);
 docker(['up', '--detach', '--wait', '--wait-timeout', '120', 'postgres']);
-docker(['--profile', 'app', 'restart', 'api', 'web']);
+docker(['--profile', 'app', 'restart', 'api', 'web', 'worker', 'redis']);
 docker(['--profile', 'app', 'up', '--detach', '--wait', '--wait-timeout', '180']);
 const me = await (await request('auth/me')).json();
 if (!me.authenticated) throw new Error('Session did not survive restart.');
 const after = await (await request('export/json')).json();
-for (const key of ['companies', 'vacancies', 'applications', 'resumes']) {
+const afterAnalytics = await (await request('analytics')).json();
+for (const key of [
+  'companies',
+  'vacancies',
+  'applications',
+  'resumes',
+  'profile',
+  'resumeDrafts',
+  'resumeVersions',
+  'operations',
+  'discoverySources',
+  'discoveryListings',
+  'savedSearches',
+]) {
   if (JSON.stringify(before[key]) !== JSON.stringify(after[key]))
     throw new Error(`Persisted ${key} changed across restart.`);
 }
 if (resume && (await digest(resume.id)) !== beforeHash)
   throw new Error('PDF changed across restart.');
+for (const key of [
+  'submitted',
+  'stages',
+  'unresolved',
+  'noRecordedResponse',
+  'responseTime',
+  'sources',
+  'resumes',
+]) {
+  if (JSON.stringify(beforeAnalytics[key]) !== JSON.stringify(afterAnalytics[key]))
+    throw new Error(`Analytics ${key} changed across restart.`);
+}
 console.log(
-  'Persistence passed: domain data, event histories, authenticated session and uploaded PDF survived project database/API/web restart.',
+  'Persistence passed: domain data, milestone evidence, analytics, resume snapshots and versions, authenticated session and PDF bytes survived project database/API/web restart.',
 );

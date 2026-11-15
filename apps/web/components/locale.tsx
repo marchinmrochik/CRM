@@ -40,11 +40,7 @@ export function useLocale() {
     event: (value: Parameters<typeof eventLabel>[1]) => eventLabel(context.locale, value),
     known: (value: string) =>
       value === 'Manual'
-        ? translate(context.locale, 'Source') === 'Source'
-          ? 'Manual'
-          : context.locale === 'ru'
-            ? 'Вручную'
-            : 'Вручну'
+        ? translate(context.locale, 'Manual')
         : value === 'Unknown'
           ? statusLabel(context.locale, 'unknown')
           : value,

@@ -1,0 +1,11 @@
+CREATE TABLE "DiscoverySource" ("id" TEXT PRIMARY KEY, "ownerId" TEXT NOT NULL, "connector" TEXT NOT NULL, "enabled" BOOLEAN NOT NULL DEFAULT false, "nextFetchAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "lastSuccessAt" TIMESTAMP(3), "lastRunId" TEXT);
+CREATE UNIQUE INDEX "DiscoverySource_ownerId_connector_key" ON "DiscoverySource"("ownerId", "connector");
+CREATE TABLE "DiscoveryListing" ("id" TEXT PRIMARY KEY, "ownerId" TEXT NOT NULL, "connector" TEXT NOT NULL, "externalId" TEXT NOT NULL, "company" TEXT NOT NULL, "title" TEXT NOT NULL, "description" TEXT NOT NULL, "url" TEXT NOT NULL, "location" TEXT NOT NULL, "publishedAt" TEXT, "contentHash" TEXT NOT NULL, "disposition" TEXT NOT NULL DEFAULT 'inbox', "seenAt" TIMESTAMP(3), "promotedVacancyId" TEXT, "firstSeenAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "lastSeenAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE UNIQUE INDEX "DiscoveryListing_ownerId_connector_externalId_key" ON "DiscoveryListing"("ownerId", "connector", "externalId");
+CREATE INDEX "DiscoveryListing_ownerId_disposition_firstSeenAt_idx" ON "DiscoveryListing"("ownerId", "disposition", "firstSeenAt");
+CREATE TABLE "DiscoverySnapshot" ("id" TEXT PRIMARY KEY, "listingId" TEXT NOT NULL REFERENCES "DiscoveryListing"("id") ON DELETE CASCADE, "runId" TEXT NOT NULL, "content" JSONB NOT NULL, "capturedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE INDEX "DiscoverySnapshot_listingId_capturedAt_idx" ON "DiscoverySnapshot"("listingId", "capturedAt");
+CREATE TABLE "SavedSearch" ("id" TEXT PRIMARY KEY, "ownerId" TEXT NOT NULL, "name" TEXT NOT NULL, "filters" JSONB NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE INDEX "SavedSearch_ownerId_createdAt_idx" ON "SavedSearch"("ownerId", "createdAt");
+ALTER TABLE "DiscoveryListing" ADD CONSTRAINT "discovery_disposition" CHECK ("disposition" IN ('inbox','shortlisted','dismissed'));
+ALTER TABLE "DiscoverySource" ADD CONSTRAINT "discovery_connector" CHECK ("connector" IN ('remotive','arbeitnow'));

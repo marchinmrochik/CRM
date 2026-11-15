@@ -7,10 +7,19 @@ import session from 'express-session';
 import pgSession from 'connect-pg-simple';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
-import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
+import { passwordVerifier, validOwnerSession, SESSION_MAX_AGE_MS } from './security';
 import type { Request, Response, NextFunction } from 'express';
 import { CrmController, ownerId } from './crm.controller';
 import { CrmService } from './crm.service';
+import { ResumeController } from './resume.controller';
+import { ResumeService } from './resume.service';
+import { OperationsService } from './operations.service';
+import { OperationsController } from './operations.controller';
+import { DiscoveryController } from './discovery.controller';
+import { DiscoveryService } from './discovery.service';
+import { AnalyticsService } from './analytics.service';
+import { AnalyticsController } from './analytics.controller';
 import { Database } from './database';
 import { databaseUrl, settings } from './config';
 
@@ -31,31 +40,46 @@ class SafeErrors implements ExceptionFilter {
           time: new Date().toISOString(),
         }),
       );
-    res
-      .status(status)
-      .json({
-        code: `HTTP_${status}`,
-        message:
-          status >= 500
-            ? 'Service unavailable. Check System activity and try again.'
-            : typeof detail === 'string'
-              ? detail
-              : 'Request failed.',
-        ...(detail && typeof detail === 'object' ? detail : {}),
-        requestId: req.requestId,
-      });
+    res.status(status).json({
+      code: `HTTP_${status}`,
+      message:
+        status >= 500
+          ? 'Service unavailable. Check System activity and try again.'
+          : typeof detail === 'string'
+            ? detail
+            : 'Request failed.',
+      ...(status < 500 && detail && typeof detail === 'object' ? detail : {}),
+      requestId: req.requestId,
+    });
   }
 }
-@Module({ controllers: [CrmController], providers: [Database, CrmService] })
+@Module({
+  controllers: [
+    CrmController,
+    ResumeController,
+    OperationsController,
+    DiscoveryController,
+    AnalyticsController,
+  ],
+  providers: [
+    Database,
+    CrmService,
+    ResumeService,
+    OperationsService,
+    DiscoveryService,
+    AnalyticsService,
+  ],
+})
 class AppModule {}
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  app.useBodyParser('json', { limit: '128kb' });
+  app.useBodyParser('json', { limit: '256kb' });
   const db = app.get(Database);
   await db.$connect();
-  const salt = randomBytes(16);
-  const passwordHash = scryptSync(settings.OWNER_PASSWORD, salt, 32);
+  if (!settings.OWNER_PASSWORD || !settings.SESSION_SECRET)
+    throw new Error('API authentication configuration is missing.');
+  const verifyPassword = await passwordVerifier(settings.OWNER_PASSWORD);
   app.use(helmet());
   app.use((req: Request & { requestId: string }, res: Response, next: NextFunction) => {
     req.requestId = randomUUID();
@@ -89,15 +113,41 @@ async function bootstrap() {
       cookie: {
         httpOnly: true,
         sameSite: 'strict',
-        secure: process.env.COOKIE_SECURE === 'true',
-        maxAge: 12 * 60 * 60 * 1000,
+        secure: settings.COOKIE_SECURE === 'true',
+        maxAge: SESSION_MAX_AGE_MS,
       },
     }),
   );
   app.use(
-    rateLimit({ windowMs: 60000, limit: 300, standardHeaders: 'draft-8', legacyHeaders: false }),
+    rateLimit({
+      windowMs: 60000,
+      limit: 600,
+      standardHeaders: 'draft-8',
+      legacyHeaders: false,
+      skip: (req) => !['GET', 'HEAD', 'OPTIONS'].includes(req.method),
+    }),
+    rateLimit({
+      windowMs: 60000,
+      limit: 120,
+      standardHeaders: 'draft-8',
+      legacyHeaders: false,
+      skip: (req) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method),
+    }),
   );
   app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.session.ownerId && !validOwnerSession(req.session, ownerId)) {
+      req.session.destroy(() => {
+        res.clearCookie('jobhunt.sid');
+        res
+          .status(req.path === '/api/v1/auth/me' ? 200 : 401)
+          .json(
+            req.path === '/api/v1/auth/me'
+              ? { authenticated: false }
+              : { code: 'UNAUTHORIZED', message: 'Sign in to your private workspace.' },
+          );
+      });
+      return;
+    }
     if (
       !['GET', 'HEAD', 'OPTIONS'].includes(req.method) &&
       (req.headers.origin !== settings.WEB_ORIGIN || req.headers['x-jobhunt-client'] !== 'web')
@@ -116,7 +166,7 @@ async function bootstrap() {
       next();
       return;
     }
-    if (!req.session.ownerId) {
+    if (!validOwnerSession(req.session, ownerId)) {
       res.status(401).json({ code: 'UNAUTHORIZED', message: 'Sign in to your private workspace.' });
       return;
     }
@@ -126,9 +176,16 @@ async function bootstrap() {
   express.post(
     '/api/v1/auth/login',
     rateLimit({ windowMs: 60000, limit: 10 }),
-    (req: Request, res: Response) => {
+    async (req: Request, res: Response) => {
       const password = typeof req.body?.password === 'string' ? req.body.password : '';
-      if (password.length > 200 || !timingSafeEqual(scryptSync(password, salt, 32), passwordHash)) {
+      let valid: boolean;
+      try {
+        valid = await verifyPassword(password);
+      } catch {
+        res.status(503).json({ message: 'Authentication is busy. Try again.' });
+        return;
+      }
+      if (!valid) {
         res.status(401).json({ message: 'Incorrect password.' });
         return;
       }
@@ -138,6 +195,7 @@ async function bootstrap() {
           return;
         }
         req.session.ownerId = ownerId;
+        req.session.authenticatedAt = Date.now();
         req.session.save((error) => res.status(error ? 503 : 200).json({ authenticated: !error }));
       });
     },
@@ -159,18 +217,15 @@ async function bootstrap() {
         database: 'healthy',
         observedAt: new Date().toISOString(),
         startedAt,
-        worker: 'not configured',
-        ai: 'not configured',
+        ...(await app.get(OperationsService).health()),
       });
     } catch {
-      res
-        .status(503)
-        .json({
-          api: 'healthy',
-          database: 'unavailable',
-          reason: 'Database readiness query failed',
-          observedAt: new Date().toISOString(),
-        });
+      res.status(503).json({
+        api: 'healthy',
+        database: 'unavailable',
+        reason: 'Database readiness query failed',
+        observedAt: new Date().toISOString(),
+      });
     }
   });
   app.useGlobalFilters(new SafeErrors());

@@ -5,6 +5,7 @@ $taskRuntime = Join-Path $taskRoot 'storage/runtime'
 New-Item -ItemType Directory -Force -Path $taskRuntime | Out-Null
 $taskServices = @(
     @{ Name='api'; Port=43171; Entry=(Join-Path $taskRoot 'apps/api/dist/main.js'); Args=@(); Directory=(Join-Path $taskRoot 'apps/api') },
+    @{ Name='worker'; Port=43172; Entry=(Join-Path $taskRoot 'apps/api/dist/worker.js'); Args=@(); Directory=(Join-Path $taskRoot 'apps/api') },
     @{ Name='web'; Port=43170; Entry=(Join-Path $taskRoot 'apps/web/node_modules/next/dist/bin/next'); Args=@('start','--hostname','127.0.0.1','--port','43170'); Directory=(Join-Path $taskRoot 'apps/web') }
 )
 foreach ($taskService in $taskServices) {
@@ -28,7 +29,7 @@ foreach ($taskService in $taskServices) {
     $taskArguments = @('"' + $taskService.Entry + '"') + $taskService.Args
     $taskStarted = Start-Process -FilePath (Get-Command node).Source -ArgumentList $taskArguments -WorkingDirectory $taskService.Directory -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $taskRuntime "$($taskService.Name).log") -RedirectStandardError (Join-Path $taskRuntime "$($taskService.Name).error.log")
     Set-Content -LiteralPath $taskPidFile -Value $taskStarted.Id
-    $taskUrl = if ($taskService.Name -eq 'api') { 'http://127.0.0.1:43171/api/v1/health/ready' } else { 'http://127.0.0.1:43170' }
+    $taskUrl = if ($taskService.Name -eq 'api') { 'http://127.0.0.1:43171/api/v1/health/ready' } elseif ($taskService.Name -eq 'worker') { 'http://127.0.0.1:43172' } else { 'http://127.0.0.1:43170' }
     $taskReady = $false
     for ($taskAttempt = 0; $taskAttempt -lt 30; $taskAttempt++) {
         try { Invoke-WebRequest -Uri $taskUrl -UseBasicParsing -TimeoutSec 2 | Out-Null; $taskReady = $true; break } catch { Start-Sleep -Milliseconds 500 }

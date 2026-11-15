@@ -1,6 +1,92 @@
 name: jobhunt-crm
 
+x-hardening: &hardening
+  cap_drop: [ALL]
+  security_opt: ['no-new-privileges:true']
+  pids_limit: 128
+  mem_limit: 768m
+  cpus: 2.0
+  read_only: true
+  tmpfs: ['/tmp:rw,noexec,nosuid,size=64m,uid=1000,gid=1000,mode=1777']
+
 services:
+  redis:
+    profiles: [app]
+    image: redis:8.2.11-bookworm
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-runtime_setup_required_redis_password}
+    command:
+      [
+        sh,
+        -c,
+        'exec redis-server --appendonly yes --maxmemory-policy noeviction --requirepass "$$REDIS_PASSWORD"',
+      ]
+    ports:
+      - '127.0.0.1:46379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  worker:
+    <<: *hardening
+    profiles: [app]
+    build:
+      context: .
+      target: api
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${RUNTIME_DATABASE_USER:-runtime_setup_required}
+      POSTGRES_PASSWORD: ${RUNTIME_DATABASE_PASSWORD:-runtime_setup_required_password}
+      POSTGRES_PORT: ${POSTGRES_PORT:-45432}
+      DATABASE_HOST: postgres
+      APP_ROLE: worker
+      AI_PROVIDER: ${AI_PROVIDER:-disabled}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_HOST: redis
+      WORKER_BIND_HOST: 0.0.0.0
+      STORAGE_PATH: /workspace/storage/resumes
+    command: [node, dist/worker.js]
+    ports:
+      - '127.0.0.1:43172:43172'
+    volumes:
+      - ./storage/resumes:/workspace/storage/resumes
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:43172').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    stop_grace_period: 60s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
   postgres:
     image: postgres:17.11-bookworm
     restart: unless-stopped
@@ -28,12 +114,16 @@ services:
         max-file: '3'
 
   migrate:
+    <<: *hardening
     profiles: [app]
     build:
       context: .
       target: api
-    env_file: .env
     environment:
+      APP_ROLE: migrate
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       DATABASE_HOST: postgres
     depends_on:
       postgres:
@@ -42,13 +132,22 @@ services:
     restart: 'no'
 
   api:
+    <<: *hardening
     profiles: [app]
     build:
       context: .
       target: api
-    env_file: .env
     environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${RUNTIME_DATABASE_USER:-runtime_setup_required}
+      POSTGRES_PASSWORD: ${RUNTIME_DATABASE_PASSWORD:-runtime_setup_required_password}
+      POSTGRES_PORT: ${POSTGRES_PORT:-45432}
       DATABASE_HOST: postgres
+      APP_ROLE: api
+      OWNER_PASSWORD: ${OWNER_PASSWORD}
+      SESSION_SECRET: ${SESSION_SECRET}
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://127.0.0.1:43170}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
       API_BIND_HOST: 0.0.0.0
       STORAGE_PATH: /workspace/storage/resumes
     ports:
@@ -78,6 +177,10 @@ services:
         max-file: '3'
 
   web:
+    <<: *hardening
+    tmpfs:
+      - '/tmp:rw,noexec,nosuid,size=64m,uid=1000,gid=1000,mode=1777'
+      - '/workspace/apps/web/.next/cache:rw,noexec,nosuid,size=64m,uid=1000,gid=1000,mode=0700'
     profiles: [app]
     build:
       context: .
@@ -109,3 +212,4 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:

@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { Database } from './database';
 import { companyInput, vacancyInput, transitionInput, transitionProblem } from './domain';
 import { storagePath } from './config';
+import { validateUploadedPdf } from './pdf-validation';
 
 export function parse<T>(schema: z.ZodType<T>, body: unknown): T {
   const result = schema.safeParse(body);
@@ -45,7 +46,14 @@ export class CrmService {
       where: { id, ownerId },
       include: {
         vacancy: { include: { company: true } },
-        resume: { select: { id: true, name: true, size: true } },
+        resume: {
+          select: {
+            id: true,
+            name: true,
+            size: true,
+            version: { select: { id: true, number: true, name: true } },
+          },
+        },
         events: { orderBy: { occurredAt: 'desc' } },
         notes: { orderBy: { createdAt: 'desc' } },
         actions: { orderBy: { dueAt: 'asc' } },
@@ -342,6 +350,9 @@ export class CrmService {
       file.buffer.subarray(0, 5).toString() !== '%PDF-'
     )
       throw new BadRequestException('Upload a PDF resume with a valid PDF header (maximum 5 MB).');
+    if (!/\.pdf$/i.test(file.originalname))
+      throw new BadRequestException('Resume filename must end in .pdf.');
+    await validateUploadedPdf(file.buffer);
     const storageKey = `${randomUUID()}.pdf`;
     await mkdir(storagePath, { recursive: true });
     await writeFile(join(storagePath, storageKey), file.buffer, { flag: 'wx' });
@@ -350,7 +361,11 @@ export class CrmService {
         data: {
           ownerId,
           storageKey,
-          name: file.originalname.replace(/[\r\n\\/]/g, '_').slice(0, 200),
+          name: Array.from(file.originalname)
+            .slice(0, 200)
+            .map((c) => (c.codePointAt(0)! < 32 || c.codePointAt(0) === 127 ? '_' : c))
+            .join('')
+            .replace(/[\\/]/g, '_'),
           size: file.size,
           checksum: createHash('sha256').update(file.buffer).digest('hex'),
         },
@@ -364,8 +379,13 @@ export class CrmService {
   async download(ownerId: string, id: string) {
     const row = await this.db.resumeArtifact.findFirst({ where: { id, ownerId } });
     if (!row) throw new NotFoundException('Resume not found.');
+    if (!/^[0-9a-f-]{36}\.pdf$/i.test(row.storageKey))
+      throw new NotFoundException('Resume file unavailable.');
     try {
-      return { row, buffer: await readFile(join(storagePath, row.storageKey)) };
+      const buffer = await readFile(join(storagePath, row.storageKey));
+      if (createHash('sha256').update(buffer).digest('hex') !== row.checksum)
+        throw new Error('Artifact integrity mismatch');
+      return { row, buffer };
     } catch {
       throw new NotFoundException('Resume file unavailable. Restore artifacts from backup.');
     }
@@ -373,8 +393,21 @@ export class CrmService {
   async exportData(ownerId: string) {
     return this.db.$transaction(
       async (tx) => ({
-        schemaVersion: 1,
+        schemaVersion: 4,
+        discoverySources: await tx.discoverySource.findMany({ where: { ownerId } }),
+        discoveryListings: await tx.discoveryListing.findMany({
+          where: { ownerId },
+          include: { snapshots: true },
+        }),
+        savedSearches: await tx.savedSearch.findMany({ where: { ownerId } }),
+        operations: await tx.operationRun.findMany({
+          where: { ownerId },
+          include: { attempts: { orderBy: { number: 'asc' } } },
+        }),
         exportedAt: new Date().toISOString(),
+        profile: await tx.candidateProfile.findUnique({ where: { ownerId } }),
+        resumeDrafts: await tx.resumeDraft.findMany({ where: { ownerId } }),
+        resumeVersions: await tx.resumeVersion.findMany({ where: { ownerId } }),
         companies: await tx.company.findMany({ where: { ownerId } }),
         vacancies: await tx.vacancy.findMany({ where: { ownerId } }),
         applications: await tx.application.findMany({

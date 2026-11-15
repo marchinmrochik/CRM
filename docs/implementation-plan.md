@@ -1,5 +1,9 @@
 # Implementation Phases and Review Gates
 
+## Current delivery status
+
+As of October 5, 2026, Phases 1–3 are implemented and locally verified. The owner authorized Phase 3 after the Phase 2 handoff; [the Phase 3 review packet](phase-3-review.md) is ready for code and visual review. Phases 4 and 5 have not started. Publication remains owner-controlled.
+
 ## Delivery protocol
 
 Each phase is a complete vertical increment: domain behavior, API, persistence, UI, errors, verification, and documentation. End with a review packet and stop for owner review. Do not proceed automatically to the next phase. Necessary fixes to the current phase remain within that phase.
@@ -52,6 +56,8 @@ AI runs use approved profile revisions and vacancy snapshots. Validate output re
 
 ## Phase 4 — Discovery and monitoring
 
+Implemented for owner review on October 5, 2026. See [Phase 4 review](phase-4-review.md); the two initial connectors use supported JSON APIs. RSS is deferred behind the same boundary.
+
 Research and implement one supported RSS/API connector first, then a second through the same boundary. Add scheduling, normalization, provenance, snapshots, repeat-import safety, reviewable duplicates, saved searches, explanations, and seen/shortlist/dismiss actions.
 
 **Visual review:** configure a source, import vacancies, inspect matching reasons and unknown eligibility, save a search, promote a vacancy to an application, and inspect a source outage.
@@ -61,6 +67,8 @@ Research and implement one supported RSS/API connector first, then a second thro
 **Exit:** supported sources regularly expand the owner's opportunity database without flooding it with duplicates.
 
 ## Phase 5 — Analytics and portfolio release
+
+Implemented for owner review on October 5, 2026. See [Phase 5 review](phase-5-review.md). Hosted publication remains separate.
 
 Build cohort-based milestone analytics, response timing, source/resume comparisons with sample sizes and unresolved outcomes, and operational summaries. Finish isolated demo mode, responsive/accessibility checks, reproducible startup, public README/screenshots, and deployment documentation.
 
@@ -72,4 +80,10 @@ Build cohort-based milestone analytics, response timing, source/resume compariso
 
 ## Later extensions
 
+The subsequent engineering roadmap is defined in [the technical improvement plan](technical-improvement-plan.md). Its T0–T8 stages complement the original product phases below; they are proposed work, not completed implementation.
+
 DOCX export/import, additional resume templates, more supported connectors, notifications, browser capture extension, interview preparation, email/calendar synchronization, local AI adapters, and multi-user access. Select these from actual usage rather than adding them to the first release.
+
+## Post-phase review and source expansion
+
+The owner requested removal of demo runtime data and deferred hosting. Replace the standalone demo with a private workspace containing actual imported jobs. Review security, operation fencing, data ownership, resume provenance, analytics attribution and reproducibility. Isolate local browser tests from the personal database. Extend documented public JSON sources and make imported-job search discoverable. Record provider access/attribution constraints and remaining integration priorities in `job-source-research.md`.

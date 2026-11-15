@@ -1,5 +1,9 @@
 # Architecture and Data Model
 
+The [November 2026 security review](security-architecture-review-2026.md) documents current trust boundaries, database privilege separation, isolated PDF validation and runtime limitations. API/worker credentials are distinct from migration credentials; the modular monolith is retained.
+
+Phase 3 implementation uses a separate worker process in the API package, Redis/BullMQ transport, and a PostgreSQL operation/attempt ledger. Queued ledger rows are reconciled into deterministic transport jobs. PDF layout and optional AI calls execute in bounded child processes. The proposal below records broader product intent; [Phase 3 design](phase-3-design.md) describes implemented boundaries and alternatives.
+
 ## Proposed topology
 
 ```mermaid
@@ -40,27 +44,27 @@ Companies, vacancies, applications, career profile, resumes, analytics, sources,
 
 ## Logical schema
 
-| Entity | Key data and relationships |
-| --- | --- |
-| Owner | Private workspace identity and timezone preferences |
-| Company | Name, website, normalized identity, owner |
-| Source | Directory information and optional connector configuration |
-| Vacancy | Company, owner, disposition, availability, normalized eligibility |
-| VacancySourceOccurrence | Vacancy, source, external ID, canonical URL, first/last seen |
-| VacancySnapshot | Vacancy, source occurrence, original description, captured time, content hash |
-| Application | Vacancy, pinned snapshot, status, submission date, submitted resume version, owner |
-| ApplicationEvent | Application, type, occurrence/recording times, actor, structured metadata |
-| Interview | Application, type, schedule, timezone, status, outcome |
-| Note / NextAction | Application, content or due/completion data |
-| ProfileFact | Owner, fact category, approved content, revision and provenance |
-| ResumeDraft | Owner, structured content, optimistic revision counter |
-| ResumeVersion | Immutable content snapshot, parent, target snapshot, provenance |
-| Artifact | Private storage key, media type, size, checksum, generating version |
-| RequirementSet | Vacancy snapshot, extraction method/version, reviewed requirements |
-| TailoringSession | Requirement set, profile revision, base resume, review state |
-| Suggestion | Session, referenced facts/requirements, before/after, decision |
-| SavedSearch / Match | Criteria version, vacancy, match explanation, seen state |
-| OperationRun / Attempt | Logical execution, attempts, failure/recovery history |
+| Entity                  | Key data and relationships                                                         |
+| ----------------------- | ---------------------------------------------------------------------------------- |
+| Owner                   | Private workspace identity and timezone preferences                                |
+| Company                 | Name, website, normalized identity, owner                                          |
+| Source                  | Directory information and optional connector configuration                         |
+| Vacancy                 | Company, owner, disposition, availability, normalized eligibility                  |
+| VacancySourceOccurrence | Vacancy, source, external ID, canonical URL, first/last seen                       |
+| VacancySnapshot         | Vacancy, source occurrence, original description, captured time, content hash      |
+| Application             | Vacancy, pinned snapshot, status, submission date, submitted resume version, owner |
+| ApplicationEvent        | Application, type, occurrence/recording times, actor, structured metadata          |
+| Interview               | Application, type, schedule, timezone, status, outcome                             |
+| Note / NextAction       | Application, content or due/completion data                                        |
+| ProfileFact             | Owner, fact category, approved content, revision and provenance                    |
+| ResumeDraft             | Owner, structured content, optimistic revision counter                             |
+| ResumeVersion           | Immutable content snapshot, parent, target snapshot, provenance                    |
+| Artifact                | Private storage key, media type, size, checksum, generating version                |
+| RequirementSet          | Vacancy snapshot, extraction method/version, reviewed requirements                 |
+| TailoringSession        | Requirement set, profile revision, base resume, review state                       |
+| Suggestion              | Session, referenced facts/requirements, before/after, decision                     |
+| SavedSearch / Match     | Criteria version, vacancy, match explanation, seen state                           |
+| OperationRun / Attempt  | Logical execution, attempts, failure/recovery history                              |
 
 Use foreign keys, unique source identifiers, required owner scoping, UTC timestamps, and explicit enums. Compensation uses decimal amounts and currency/period fields. Documents live outside relational rows; structured resume snapshots live in PostgreSQL.
 
@@ -72,16 +76,16 @@ Physical migrations, indexes, event payload schemas, and deletion policies are f
 
 Versioned REST API under `/api/v1`, documented through OpenAPI. Common error envelope: `code`, safe `message`, field errors when applicable, and `requestId`. Paginated list endpoints have bounded limits and explicit sorting.
 
-| Boundary | Representative operations |
-| --- | --- |
-| Companies / vacancies | Create, list/filter, update, archive; capture snapshots |
-| Applications | Create draft, submit, transition, timeline, notes, next actions |
-| Interviews | Schedule, complete, cancel |
-| Profile / resumes | Edit approved profile, draft revision, publish version, export |
-| Tailoring | Extract, compare, review suggestion, publish reviewed draft |
-| Sources / searches | Configure supported source, run import, evaluate search |
-| Analytics | Cohort summaries and milestone counts |
-| Operations | List runs, inspect attempts, retry eligible failure, request cancellation |
+| Boundary              | Representative operations                                                 |
+| --------------------- | ------------------------------------------------------------------------- |
+| Companies / vacancies | Create, list/filter, update, archive; capture snapshots                   |
+| Applications          | Create draft, submit, transition, timeline, notes, next actions           |
+| Interviews            | Schedule, complete, cancel                                                |
+| Profile / resumes     | Edit approved profile, draft revision, publish version, export            |
+| Tailoring             | Extract, compare, review suggestion, publish reviewed draft               |
+| Sources / searches    | Configure supported source, run import, evaluate search                   |
+| Analytics             | Cohort summaries and milestone counts                                     |
+| Operations            | List runs, inspect attempts, retry eligible failure, request cancellation |
 
 Submission and transitions are explicit commands rather than unrestricted status field patches. Long-running commands return `202` with a run ID and status URL. Validation and authorization happen on the server even when the UI validates first.
 
@@ -100,3 +104,13 @@ Use an established session authentication solution; do not design custom authent
 Connectors use configured allowed destinations, bounded timeouts/size, and safe redirect handling. Arbitrary URL ingestion must not access localhost/private network destinations. Sanitize imported markup before rendering. Demo mode uses separate synthetic storage and cannot access real integrations or private documents.
 
 Test domain transitions, analytics denominators, immutable versions, evidence validation, isolation, import idempotency, and retry behavior. Use real PostgreSQL integration tests for constraints/transactions. Playwright verifies the critical user journeys and rendered states. Unit tests should protect behavior, not mirror trivial implementation details.
+
+# Phase 4 implementation update
+
+Job search is an owner-scoped imported inbox separate from the manual vacancy CRM. Five fixed public JSON API connectors normalize remote listings: Remotive, Arbeitnow, Jobicy, Himalayas and Remote OK. Source IDs, immutable changed snapshots, hash comparison and explicit promotion retain provenance without overwriting captured CRM/application evidence. Saved filters return literal matching reasons; eligibility remains unknown. The existing worker schedules enabled sources, persists per-source quotas, and commits imports atomically with fenced operation runs/attempts. Himalayas uses a daily interval; other sources use six hours. Imports remain bounded; see [source coverage and priorities](job-source-research.md). No new owner services or host ports are required. [Phase 4 design](phase-4-design.md) records the original two-connector scope.
+
+## Phase 5 implementation update
+
+`packages/analytics` is the pure shared calculation boundary for the owner API and synthetic demo. The API gathers captured application evidence under owner scope and a consistent PostgreSQL transaction. Append-only explicit milestone/correction events reuse the application ledger and optimistic revisions; no new database schema or migration is required. Current outcomes and historical progress are separate. See [analytics contract](analytics.md) for precise denominators and timing.
+
+The owner removed the standalone demo after Phase 5. Production contains only the authenticated owner workspace. Local browser verification uses the disposable `compose.e2e.yaml` project; it never mounts personal storage or databases.

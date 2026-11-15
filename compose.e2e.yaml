@@ -1,0 +1,105 @@
+name: jobhunt-crm-e2e
+x-hardening: &hardening
+  cap_drop: [ALL]
+  security_opt: ['no-new-privileges:true']
+  pids_limit: 128
+  mem_limit: 768m
+  cpus: 2.0
+  read_only: true
+  tmpfs: ['/tmp:rw,noexec,nosuid,size=64m,uid=1000,gid=1000,mode=1777']
+x-settings: &settings
+  POSTGRES_DB: jobhunt_e2e
+  POSTGRES_USER: jobhunt_test
+  POSTGRES_PASSWORD: e2e-only-synthetic-database-password
+  POSTGRES_PORT: '45442'
+  DATABASE_HOST: postgres
+  SESSION_SECRET: e2e-only-synthetic-session-secret-with-sufficient-length
+  OWNER_PASSWORD: e2e-only-synthetic-owner-password
+  WEB_ORIGIN: http://127.0.0.1:43180
+  STORAGE_PATH: /workspace/storage/resumes
+  REDIS_HOST: redis
+  AI_PROVIDER: disabled
+services:
+  postgres:
+    image: postgres:17.11-bookworm
+    environment: *settings
+    ports: ['127.0.0.1:45442:5432']
+    tmpfs: ['/var/lib/postgresql/data']
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U jobhunt_test -d jobhunt_e2e']
+      interval: 2s
+      retries: 30
+  redis:
+    image: redis:8.2.11-bookworm
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 2s
+      retries: 30
+  migrate:
+    <<: *hardening
+    image: jobhunt-crm-api
+    environment: *settings
+    command:
+      [
+        sh,
+        -c,
+        'pnpm --filter @jobhunt/api db:migrate && node /workspace/scripts/test-runtime-role.mjs',
+      ]
+    depends_on:
+      postgres: { condition: service_healthy }
+  api:
+    <<: *hardening
+    image: jobhunt-crm-api
+    environment:
+      <<: *settings
+      API_BIND_HOST: 0.0.0.0
+      POSTGRES_USER: jobhunt_runtime_00000000
+      POSTGRES_PASSWORD: e2e-only-synthetic-runtime-password
+    ports: ['127.0.0.1:43181:43171']
+    volumes: ['e2e_artifacts:/workspace/storage/resumes']
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:43171/api/v1/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 2s
+      retries: 30
+  worker:
+    <<: *hardening
+    image: jobhunt-crm-api
+    environment:
+      <<: *settings
+      WORKER_BIND_HOST: 0.0.0.0
+      POSTGRES_USER: jobhunt_runtime_00000000
+      POSTGRES_PASSWORD: e2e-only-synthetic-runtime-password
+    command: [node, dist/worker.js]
+    volumes: ['e2e_artifacts:/workspace/storage/resumes']
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+  web:
+    <<: *hardening
+    tmpfs:
+      - '/tmp:rw,noexec,nosuid,size=64m,uid=1000,gid=1000,mode=1777'
+      - '/workspace/apps/web/.next/cache:rw,noexec,nosuid,size=64m,uid=1000,gid=1000,mode=0700'
+    image: jobhunt-crm-web
+    ports: ['127.0.0.1:43180:43170']
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:43170').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 2s
+      retries: 30
+volumes:
+  e2e_artifacts:

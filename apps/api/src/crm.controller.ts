@@ -29,6 +29,33 @@ export class CrmController {
   @Get('companies') companies() {
     return this.crm.db.company.findMany({ where: { ownerId }, orderBy: { name: 'asc' } });
   }
+  @Get('today') async today() {
+    const until = new Date(Date.now() + 7 * 86400000);
+    const include = {
+      application: {
+        select: { vacancy: { select: { title: true, company: { select: { name: true } } } } },
+      },
+    };
+    const [actions, interviews, unseen, drafts] = await this.crm.db.$transaction([
+      this.crm.db.nextAction.findMany({
+        where: { application: { ownerId }, completedAt: null, dueAt: { lte: until } },
+        include,
+        orderBy: { dueAt: 'asc' },
+        take: 20,
+      }),
+      this.crm.db.interview.findMany({
+        where: { application: { ownerId }, status: 'scheduled', scheduledAt: { lte: until } },
+        include,
+        orderBy: { scheduledAt: 'asc' },
+        take: 20,
+      }),
+      this.crm.db.discoveryListing.count({
+        where: { ownerId, seenAt: null, disposition: { not: 'dismissed' } },
+      }),
+      this.crm.db.application.count({ where: { ownerId, status: 'draft' } }),
+    ]);
+    return { actions, interviews, unseen, drafts };
+  }
   @Post('companies') addCompany(@Body() body: unknown) {
     return this.crm.saveCompany(ownerId, body);
   }
@@ -101,12 +128,29 @@ export class CrmController {
   @Get('resumes') resumes() {
     return this.crm.db.resumeArtifact.findMany({
       where: { ownerId },
-      select: { id: true, name: true, size: true, createdAt: true },
+      select: {
+        id: true,
+        name: true,
+        size: true,
+        createdAt: true,
+        version: { select: { id: true, number: true, name: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
   @Post('resumes')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024, files: 1 } }))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: {
+        fileSize: 5 * 1024 * 1024,
+        files: 1,
+        fields: 0,
+        parts: 2,
+        fieldNameSize: 100,
+        headerPairs: 50,
+      },
+    }),
+  )
   upload(@UploadedFile() file?: Express.Multer.File) {
     return this.crm.upload(ownerId, file);
   }
@@ -159,10 +203,64 @@ export class CrmController {
         connection: 'Directory only',
       },
       {
-        name: 'Remotive',
-        url: 'https://remotive.com/',
-        category: 'Remote',
+        name: 'Adzuna',
+        url: 'https://www.adzuna.com/',
+        category: 'Europe and USA',
+        connection: 'API key required · not connected',
+      },
+      {
+        name: 'Jooble',
+        url: 'https://jooble.org/',
+        category: 'Global',
+        connection: 'API key required · not connected',
+      },
+      {
+        name: 'Reed',
+        url: 'https://www.reed.co.uk/',
+        category: 'United Kingdom',
+        connection: 'API key required · not connected',
+      },
+      {
+        name: 'The Muse',
+        url: 'https://www.themuse.com/search/jobs',
+        category: 'USA',
+        connection: 'Registration required · not connected',
+      },
+      {
+        name: 'Careerjet',
+        url: 'https://www.careerjet.com/',
+        category: 'Global',
+        connection: 'API key required · not connected',
+      },
+      {
+        name: 'EURES',
+        url: 'https://eures.europa.eu/index_en',
+        category: 'Europe',
         connection: 'Directory only',
+      },
+      {
+        name: 'Indeed',
+        url: 'https://www.indeed.com/',
+        category: 'Global',
+        connection: 'Directory only',
+      },
+      {
+        name: 'Glassdoor',
+        url: 'https://www.glassdoor.com/Job/',
+        category: 'Global',
+        connection: 'Directory only',
+      },
+      {
+        name: 'France Travail',
+        url: 'https://www.francetravail.fr/',
+        category: 'France',
+        connection: 'Registration required · not connected',
+      },
+      {
+        name: 'USAJOBS',
+        url: 'https://www.usajobs.gov/',
+        category: 'USA',
+        connection: 'API key required · not connected',
       },
       {
         name: 'We Work Remotely',

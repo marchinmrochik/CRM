@@ -42,8 +42,21 @@ export function ErrorNotice({ error }: { error: Error | null }) {
                       timezone: 'Timezone',
                       dueAt: 'Due date',
                       content: 'Note',
+                      headline: 'Professional headline',
+                      email: 'Email',
+                      phone: 'Phone',
+                      facts: 'Profile facts',
+                      blocks: 'Resume content',
+                      text: 'Resume wording',
+                      quote: 'Exact vacancy quote',
+                      kind: 'Fact category',
+                      state: 'Evidence status',
+                      factIds: 'Evidence facts',
+                      factId: 'Approved source fact',
+                      approved: 'I confirm this fact is accurate',
                     } as Record<string, string>
-                  )[field.field] ?? field.field,
+                  )[field.field.split('.').at(-1) ?? field.field] ??
+                    'Check the highlighted fields.',
                 ),
               })}
             </small>
@@ -94,11 +107,13 @@ export function Form({
   onSubmit,
   submit = 'Save',
   onDone,
+  disabled = false,
 }: {
-  children: React.ReactNode;
+  children?: React.ReactNode;
   onSubmit: (data: FormData) => Promise<unknown>;
   submit?: string;
   onDone?: () => void;
+  disabled?: boolean;
 }) {
   const { t } = useLocale();
   const [pending, setPending] = useState(false);
@@ -121,7 +136,7 @@ export function Form({
         }
       }}
     >
-      <fieldset disabled={pending}>
+      <fieldset disabled={pending || disabled}>
         {children}
         <ErrorNotice error={error} />
         <button className="button primary" type="submit">

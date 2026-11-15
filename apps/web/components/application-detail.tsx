@@ -3,15 +3,18 @@ import { useQuery } from '@tanstack/react-query';
 import { api, Application, Resume, statuses, iso } from '../lib/api';
 import { Badge, ErrorNotice, Field, Form } from './ui';
 import { useLocale } from './locale';
+import { MilestoneForm } from './milestone-form';
 
 export function ApplicationDetail({
   id,
   onBack,
   refresh,
+  onTailor,
 }: {
   id: string;
   onBack: () => void;
   refresh: () => Promise<void>;
+  onTailor?: (vacancyId: string) => void;
 }) {
   const { t, label, date, event: translateEvent } = useLocale();
   const query = useQuery({
@@ -48,8 +51,14 @@ export function ApplicationDetail({
         </div>
         <Badge value={a.status} />
       </div>
+      {onTailor && (
+        <button className="button primary" onClick={() => onTailor(a.vacancy.id)}>
+          {t('Create tailored resume')}
+        </button>
+      )}
       <div className="detail-grid">
         <div className="stack">
+          <MilestoneForm application={a} refresh={refresh} />
           <section className="panel">
             <h3>{t('Update application')}</h3>
             <Form
@@ -117,6 +126,13 @@ export function ApplicationDetail({
           </section>
           <section className="panel">
             <h3>{t('Submitted document')}</h3>
+            {a.resume?.version && (
+              <p>
+                <a href={`?view=resumes&version=${a.resume.version.id}`}>
+                  {t('Published version {number}', { number: a.resume.version.number })}
+                </a>
+              </p>
+            )}
             {a.resume ? (
               <a className="document" href={`/api/v1/resumes/${a.resume.id}/download`}>
                 {a.resume.name} ↓
@@ -260,6 +276,9 @@ export function ApplicationDetail({
               {a.events.map((event) => (
                 <li key={event.id}>
                   <strong>{translateEvent(event)}</strong>
+                  {event.type === 'milestone_voided' && (
+                    <p>{String(event.metadata.reason ?? '')}</p>
+                  )}
                   <small>{date(event.occurredAt)}</small>
                   {event.occurredAt !== event.recordedAt && (
                     <small>{t('Recorded {date}', { date: date(event.recordedAt) })}</small>

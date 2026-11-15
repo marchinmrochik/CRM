@@ -1,5 +1,5 @@
 # Worker Application Boundary
 
-Reserved for durable background operations in Phase 3. No worker process or Redis service is started in the current bootstrap.
+The Phase 3 worker runs as `apps/api/src/worker.ts` in a separate process using the API package and Docker image. This folder remains reserved for a later package split if independent dependencies justify it.
 
-Reuse backend domain services; own job execution, heartbeat, cancellation, retries, and recovery. Reserved health port: `43172`.
+It reuses backend services and owns dispatch/reconciliation, heartbeat, bounded task child processes, retries and recovery. Local health port: `43172`; Redis host port: `46379`. Cancellation is a future extension. See [Phase 3 design](../../docs/phase-3-design.md).

@@ -8,7 +8,9 @@ test('Russian and Ukrainian interfaces preserve language and candidate data', as
   await page.getByLabel('Пароль владельца').fill('incorrect-password');
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
   await expect(page.locator('.error[role=alert]')).toContainText('Неверный пароль.');
-  await page.getByLabel('Пароль владельца').fill(settings.OWNER_PASSWORD);
+  await page
+    .getByLabel('Пароль владельца')
+    .fill(process.env.OWNER_PASSWORD ?? settings.OWNER_PASSWORD);
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Обзор', exact: true })).toBeVisible();
   await page.reload();
@@ -41,4 +43,3 @@ test('Russian and Ukrainian interfaces preserve language and candidate data', as
   await expect(page.getByRole('heading', { name: 'Обзор', exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
 });
-

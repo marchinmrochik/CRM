@@ -119,6 +119,57 @@ model ResumeArtifact {
   size Int
   createdAt DateTime @default(now())
   applications Application[]
+  version ResumeVersion?
+}
+
+model CandidateProfile {
+  id String @id @default(uuid())
+  ownerId String @unique
+  revision Int @default(0)
+  content Json
+  updatedAt DateTime @updatedAt
+}
+
+model ResumeDraft {
+  id String @id @default(uuid())
+  ownerId String
+  name String
+  revision Int @default(0)
+  profileRevision Int
+  profileSnapshot Json
+  vacancySnapshot Json
+  content Json
+  baseline Json
+  requirements Json
+  parentVersionId String?
+  parentVersion ResumeVersion? @relation("DraftParent", fields: [parentVersionId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  versions ResumeVersion[] @relation("DraftVersions")
+  @@index([ownerId, updatedAt])
+}
+
+model ResumeVersion {
+  id String @id @default(uuid())
+  ownerId String
+  draftId String
+  draft ResumeDraft @relation("DraftVersions", fields: [draftId], references: [id], onDelete: Restrict)
+  number Int
+  name String
+  parentVersionId String?
+  parentVersion ResumeVersion? @relation("VersionParent", fields: [parentVersionId], references: [id], onDelete: Restrict)
+  childVersions ResumeVersion[] @relation("VersionParent")
+  derivedDrafts ResumeDraft[] @relation("DraftParent")
+  profileSnapshot Json
+  vacancySnapshot Json
+  content Json
+  requirements Json
+  acceptedDiff Json
+  artifactId String @unique
+  artifact ResumeArtifact @relation(fields: [artifactId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+  @@unique([draftId, number])
+  @@index([ownerId, createdAt])
 }
 
 model Session {
@@ -127,4 +178,113 @@ model Session {
   expire DateTime @db.Timestamp(6)
   @@index([expire], map: "session_expire_idx")
   @@map("session")
+}
+
+model OperationRun {
+  id String @id @default(uuid())
+  ownerId String
+  kind String
+  targetId String?
+  requestKey String
+  status String @default("queued")
+  input Json
+  output Json?
+  decisions Json @default("{}")
+  generation Int @default(0)
+  attemptCount Int @default(0)
+  maxAttempts Int @default(3)
+  activeAttemptId String?
+  nextTrigger String @default("initial")
+  nextRequestedBy String @default("owner")
+  leaseUntil DateTime?
+  nextAttemptAt DateTime @default(now())
+  dispatchedAt DateTime?
+  errorCode String?
+  errorReason String?
+  retryable Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  completedAt DateTime?
+  attempts OperationAttempt[]
+  @@unique([ownerId, requestKey])
+  @@index([status, nextAttemptAt])
+  @@index([ownerId, createdAt])
+}
+
+model OperationAttempt {
+  id String @id @default(uuid())
+  runId String
+  run OperationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  number Int
+  workerId String
+  trigger String @default("initial")
+  requestedBy String @default("owner")
+  status String @default("running")
+  startedAt DateTime @default(now())
+  heartbeatAt DateTime @default(now())
+  finishedAt DateTime?
+  errorCode String?
+  errorReason String?
+  retryable Boolean @default(false)
+  @@unique([runId, number])
+}
+
+model WorkerHeartbeat {
+  id String @id
+  startedAt DateTime @default(now())
+  heartbeatAt DateTime @default(now())
+  queueHealthy Boolean @default(false)
+  aiStatus String
+}
+
+model DiscoverySource {
+  id String @id @default(uuid())
+  ownerId String
+  connector String
+  enabled Boolean @default(false)
+  nextFetchAt DateTime @default(now())
+  lastSuccessAt DateTime?
+  lastRunId String?
+  @@unique([ownerId, connector])
+}
+
+model DiscoveryListing {
+  id String @id @default(uuid())
+  ownerId String
+  connector String
+  externalId String
+  company String
+  title String
+  description String
+  url String
+  location String
+  publishedAt String?
+  contentHash String
+  disposition String @default("inbox")
+  seenAt DateTime?
+  promotedVacancyId String?
+  firstSeenAt DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  snapshots DiscoverySnapshot[]
+  @@unique([ownerId, connector, externalId])
+  @@index([ownerId, disposition, firstSeenAt])
+}
+
+model DiscoverySnapshot {
+  id String @id @default(uuid())
+  listingId String
+  listing DiscoveryListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  runId String
+  content Json
+  capturedAt DateTime @default(now())
+  @@index([listingId, capturedAt])
+}
+
+model SavedSearch {
+  id String @id @default(uuid())
+  ownerId String
+  name String
+  filters Json
+  createdAt DateTime @default(now())
+  @@index([ownerId, createdAt])
 }

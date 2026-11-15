@@ -1,9 +1,17 @@
 packages:
   - apps/*
   - packages/*
+overrides:
+  vite: 8.3.3
+  minimatch: 11.0.1
+  body-parser: 2.4.0
+  ip-address: 10.7.4
+  fast-uri: 3.1.9
+  qs: 6.16.1
 allowBuilds:
   '@prisma/engines': true
   '@scarf/scarf': false
   esbuild: true
+  msgpackr-extract: false
   prisma: true
   sharp: true

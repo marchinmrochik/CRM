@@ -1,5 +1,7 @@
 # Backup and Restore
 
+After a live restore, re-run `node scripts/runtime-role.mjs` before restarting API/worker to reapply runtime grants and protected-table restrictions. Restore drills deliberately use `--no-owner --no-acl` and do not verify production role grants by themselves. Keep the private `.env` credentials separately protected; database dumps do not reconstruct service passwords. Server-side authentication age is enforced, so restored or legacy sessions may require signing in again.
+
 ## Create and verify
 
 ```powershell
@@ -15,7 +17,7 @@ Current artifact writes are immutable and no purge endpoint exists, so copying a
 
 ## Recover real data
 
-1. Stop API/web and any future worker. Preserve a separate backup of the damaged state.
+1. Stop API/web/worker. Preserve a separate backup of the damaged state.
 2. Verify the selected backup with the command above.
 3. Create a new explicitly named recovery database. Restore its dump with `pg_restore --exit-on-error --no-owner --no-acl`; do not overwrite an existing database.
 4. Copy the backup's `resumes` directory into a new private artifact directory.
@@ -24,3 +26,8 @@ Current artifact writes are immutable and no purge endpoint exists, so copying a
 7. Switch the local configuration only after inspection, then start the app and repeat the critical journey.
 
 The verification command automates an isolated restore drill; a production cutover remains explicit. Never use volume deletion as recovery.
+
+Phase 3 backups include operation inputs, results, decisions and attempt history in the PostgreSQL dump. Redis is reconstructible transport, not the authoritative ledger. After recovery, keep the worker stopped until candidate snapshots and pending operations have been reviewed; restarting it resumes queued work and reconciles expired leases. AI retries can repeat provider charges after ambiguous timeouts. Existing successful records are not republished.
+# Phase 4 data coverage
+
+PostgreSQL backups also include discovery source configurations and request intervals, normalized listings, every changed snapshot, saved searches and their import run/attempt history. JSON export schema version 4 includes these owner-scoped records. Redis remains reconstructible transport. Stop the worker before a restore/cutover and review restored source quotas/pending runs before restarting monitoring; never use restoration to bypass provider request limits. A controlled restart check requires quiescent sources: disable scheduling and let active runs finish first.

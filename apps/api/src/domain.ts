@@ -20,7 +20,7 @@ export const vacancyInput = z.object({
   description: z.string().trim().min(1).max(60000),
   url: z.union([z.url().refine((s) => /^https?:\/\//.test(s)), z.literal('')]).optional(),
   source: z.string().trim().min(1).max(100).default('Manual'),
-  location: z.string().trim().max(200).default('Unknown'),
+  location: z.string().trim().max(5000).default('Unknown'),
   workMode: z.enum(['remote', 'hybrid', 'office']).default('remote'),
   eligibility: z.enum(['unknown', 'eligible', 'ineligible']).default('unknown'),
 });

@@ -1,5 +1,9 @@
 # Execution Status and Observability
 
+## Implemented Phase 3 contract
+
+The general model below was a planning proposal. Phase 3 implements `queued`, `running`, `retrying`, `succeeded`, and `failed` run states; interruption is a preserved failed attempt with code `WORKER_INTERRUPTED`. Manual retries extend the same run's budget, preserving every prior attempt; no linked replacement run is created. Each attempt records its worker identity, initiator and initial/automatic/manual/recovery trigger. Cancellation, per-step traces and linked replacement runs remain future extensions. See [Phase 3 design](phase-3-design.md) for the current contracts.
+
 ## Required behavior
 
 The owner can answer: what ran, whether it succeeded, where it failed, why it failed, whether it retried, who requested the retry, and what happened after process recovery.
@@ -31,16 +35,16 @@ Percentages are shown only when a trustworthy total exists. Otherwise show named
 
 ## Failure categories and retry policy
 
-| Category | Default behavior |
-| --- | --- |
-| Network timeout / temporary upstream failure | Bounded exponential backoff with jitter |
-| Provider rate limit | Respect retry timing where supplied; bounded retry |
-| Database/queue temporary outage | Retry safe operations after dependency recovery |
-| Invalid configuration / missing credentials | Fail with a corrective action; no automatic retry loop |
-| Authentication/authorization failure | Require configuration correction |
-| Invalid input / unsupported source format | Fail with validation details |
-| Invalid AI schema / unsupported fact reference | Bounded repair attempt, then fail reviewably |
-| Lost worker heartbeat / process exit | Mark attempt interrupted; reconcile before requeue |
+| Category                                       | Default behavior                                       |
+| ---------------------------------------------- | ------------------------------------------------------ |
+| Network timeout / temporary upstream failure   | Bounded exponential backoff with jitter                |
+| Provider rate limit                            | Respect retry timing where supplied; bounded retry     |
+| Database/queue temporary outage                | Retry safe operations after dependency recovery        |
+| Invalid configuration / missing credentials    | Fail with a corrective action; no automatic retry loop |
+| Authentication/authorization failure           | Require configuration correction                       |
+| Invalid input / unsupported source format      | Fail with validation details                           |
+| Invalid AI schema / unsupported fact reference | Bounded repair attempt, then fail reviewably           |
+| Lost worker heartbeat / process exit           | Mark attempt interrupted; reconcile before requeue     |
 
 Proposed initial policy: one initial attempt plus at most two automatic retries for transient failures. Per-operation overrides require a documented reason. Persist the policy used for each run.
 
@@ -80,3 +84,7 @@ Proposed retention: full operation/attempt records for 90 days and local rotatin
 - Redeliver an import: no duplicate vacancy is created.
 - Fail PDF generation: draft/version stays available; retry does not overwrite the submitted artifact.
 - Disconnect the API: the web UI reports unavailable status and preserves unsaved input where possible.
+
+## Phase 5 operational report
+
+The Analytics screen now aggregates current run states, historical failed attempts, successful runs with earlier failures and the top safe failure codes. Its run-creation-date scope is stated separately from submission cohorts and source/resume filters. Existing System activity and Sources detail retain individual attempts, triggers, worker IDs, retry times and reasons; the aggregate report does not replace diagnosis. Milestone validation/correction uses the same safe request error IDs and owner/revision guards as the CRM. The synthetic demo makes no requests and does not report real owner operational health.

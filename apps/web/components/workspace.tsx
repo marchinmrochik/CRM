@@ -30,6 +30,11 @@ import {
 import { Badge, Dialog, Empty, ErrorNotice, Field, Form } from './ui';
 import { ApplicationDetail } from './application-detail';
 import { LocaleProvider, LanguagePicker, useLocale } from './locale';
+import { ProfileWorkspace, ResumeStudio } from './resume-workspace';
+import { OperationsWorkspace } from './operations-workspace';
+import { DiscoverySources, DiscoveryWorkspace } from './discovery-workspace';
+import { AnalyticsWorkspace } from './analytics-workspace';
+import { TodayWorkspace } from './today-workspace';
 
 const navigation = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -37,7 +42,10 @@ const navigation = [
   { id: 'vacancies', label: 'Vacancies', icon: Layers3 },
   { id: 'companies', label: 'Companies', icon: Building2 },
   { id: 'resumes', label: 'Resumes', icon: FileText },
+  { id: 'profile', label: 'Profile', icon: Building2 },
   { id: 'sources', label: 'Sources', icon: Radio },
+  { id: 'discovery', label: 'Job search', icon: Search },
+  { id: 'analytics', label: 'Analytics', icon: Activity },
   { id: 'system', label: 'System activity', icon: Activity },
 ];
 const subtitles: Record<string, string> = {
@@ -46,7 +54,10 @@ const subtitles: Record<string, string> = {
   vacancies: 'Keep the opportunities worth exploring.',
   companies: 'The people and teams behind your next role.',
   resumes: 'Keep a record of exactly what you sent.',
+  profile: 'Your confirmed experience is the source of every resume.',
   sources: 'Broaden your search, one source at a time.',
+  discovery: 'Find and review your next remote opportunity.',
+  analytics: 'Measure recorded outcomes, with the evidence behind every number.',
   system: 'Know what is running and what needs attention.',
 };
 
@@ -68,6 +79,15 @@ export default function WorkspaceRoot() {
 function Workspace() {
   const { t, date, label, known } = useLocale();
   const client = useQueryClient();
+  useEffect(() => {
+    const expired = () => {
+      void client.cancelQueries({ predicate: (query) => query.queryKey[0] !== 'auth' });
+      client.removeQueries({ predicate: (query) => query.queryKey[0] !== 'auth' });
+      client.setQueryData(['auth'], { authenticated: false });
+    };
+    addEventListener('jobhunt:session-expired', expired);
+    return () => removeEventListener('jobhunt:session-expired', expired);
+  }, [client]);
   const auth = useQuery({
     queryKey: ['auth'],
     queryFn: () => api<{ authenticated: boolean }>('auth/me'),
@@ -104,7 +124,13 @@ function Workspace() {
     setPage(1);
     const params = new URLSearchParams({ view: next });
     if (application) params.set('application', application);
-    history.pushState({}, '', `?${params}`);
+    history.pushState(
+      {},
+      '',
+      next === 'discovery'
+        ? (sessionStorage.getItem('jobhunt.last-search') ?? `?${params}`)
+        : `?${params}`,
+    );
   }
   function filter(nextQ: string, nextStatus: string, nextPage = 1) {
     setQ(nextQ);
@@ -212,6 +238,7 @@ function Workspace() {
             </Form>
           )}
           <ErrorNotice error={auth.error} />
+          <p></p>
           <small>{t('Local access · Password is stored in your private .env')}</small>
         </div>
       </div>
@@ -318,6 +345,10 @@ function Workspace() {
           <ErrorNotice error={notice} />
           {view === 'overview' && (
             <>
+              <TodayWorkspace
+                open={(id) => navigate('applications', id)}
+                search={() => navigate('discovery')}
+              />
               <ErrorNotice error={overview.error} />
               <div className="stats-grid">
                 {[
@@ -420,6 +451,14 @@ function Workspace() {
                 id={selected}
                 onBack={() => navigate('applications')}
                 refresh={refresh}
+                onTailor={(vacancyId) => {
+                  history.pushState(
+                    {},
+                    '',
+                    `?view=resumes&vacancy=${vacancyId}&create=true&application=${selected}`,
+                  );
+                  setView('resumes');
+                }}
               />
             ) : (
               <>
@@ -613,49 +652,76 @@ function Workspace() {
               )}
             </>
           )}
+          {view === 'profile' && <ProfileWorkspace />}
           {view === 'resumes' && (
             <>
-              <section className="panel">
-                <h2>{t('Your resume library')}</h2>
-                <p className="muted">
-                  {t(
-                    'Upload an existing PDF. Each file is immutable and can be pinned to an application.',
-                  )}
-                </p>
-                <Form
-                  submit={t('Upload PDF')}
-                  onSubmit={(data) => api('resumes', data)}
-                  onDone={() => void refresh()}
+              {selected && (
+                <button
+                  className="button resume-navigation"
+                  onClick={() => navigate('applications', selected)}
                 >
-                  <Field label={t('Resume PDF (up to 5 MB)')}>
-                    <input type="file" name="file" accept="application/pdf" required />
-                  </Field>
-                </Form>
-              </section>
-              <ErrorNotice error={resumes.error} />
-              <div className="cards-grid">
-                {resumes.data?.map((resume) => (
-                  <section className="panel" key={resume.id}>
-                    <FileText size={25} className="accent" />
-                    <h3>{resume.name}</h3>
-                    <p className="muted">
-                      {t('{size} KB · Original document', { size: Math.ceil(resume.size / 1024) })}
-                    </p>
-                    <a href={`/api/v1/resumes/${resume.id}/download`} className="button">
-                      {t('Download PDF ↓')}
-                    </a>
-                  </section>
-                ))}
-              </div>
+                  {t('Back to application')}
+                </button>
+              )}
+              <ResumeStudio vacancies={vacancies.data ?? []} onProfile={() => navigate('profile')}>
+                <section className="panel">
+                  <h2>{t('Your resume library')}</h2>
+                  <p className="muted">
+                    {t(
+                      'Upload an existing PDF. Each file is immutable and can be pinned to an application.',
+                    )}
+                  </p>
+                  <Form
+                    submit={t('Upload PDF')}
+                    onSubmit={(data) => api('resumes', data)}
+                    onDone={() => void refresh()}
+                  >
+                    <Field label={t('Resume PDF (up to 5 MB)')}>
+                      <input type="file" name="file" accept="application/pdf" required />
+                    </Field>
+                  </Form>
+                </section>
+                <ErrorNotice error={resumes.error} />
+                <div className="cards-grid">
+                  {resumes.data?.map((resume) => (
+                    <section className="panel" key={resume.id}>
+                      <FileText size={25} className="accent" />
+                      <h3>{resume.name}</h3>
+                      <p className="muted">
+                        {t('{size} KB · Original document', {
+                          size: Math.ceil(resume.size / 1024),
+                        })}
+                      </p>
+                      <a href={`/api/v1/resumes/${resume.id}/download`} className="button">
+                        {t('Download PDF ↓')}
+                      </a>
+                    </section>
+                  ))}
+                </div>
+              </ResumeStudio>
             </>
+          )}
+          {view === 'discovery' && (
+            <DiscoveryWorkspace
+              onPromoted={(id, action) => {
+                if (action === 'application')
+                  void act(async () => {
+                    const saved = await api<Vacancy[]>('vacancies');
+                    const vacancy = saved.find((v) => v.id === id);
+                    if (!vacancy) throw new Error(t('Action failed.'));
+                    await begin(vacancy);
+                  });
+                else if (action === 'resume') {
+                  history.pushState({}, '', `?view=resumes&vacancy=${id}&create=true`);
+                  setView('resumes');
+                } else navigate('vacancies');
+              }}
+            />
           )}
           {view === 'sources' && (
             <>
-              <div className="info-banner">
-                {t(
-                  'Sources are links in this phase. Automated imports and saved monitoring searches arrive in Phase 4.',
-                )}
-              </div>
+              <DiscoverySources />
+              <h2>{t('More job boards')}</h2>
               <ErrorNotice error={sources.error} />
               <div className="cards-grid">
                 {sources.data?.map((source) => (
@@ -677,6 +743,15 @@ function Workspace() {
                 ))}
               </div>
             </>
+          )}
+          {view === 'analytics' && (
+            <AnalyticsWorkspace
+              onApplication={(id) => navigate('applications', id)}
+              onResume={(id) => {
+                history.pushState({}, '', `?view=resumes&version=${id}`);
+                setView('resumes');
+              }}
+            />
           )}
           {view === 'system' && (
             <>
@@ -705,8 +780,8 @@ function Workspace() {
                   },
                   {
                     name: t('Background worker'),
-                    value: 'not configured',
-                    detail: t('Execution history and recovery arrive in Phase 3.'),
+                    value: health.data?.worker ?? 'checking',
+                    detail: t('Persistent attempt history and automatic recovery.'),
                   },
                 ].map((service) => (
                   <section className="panel" key={service.name}>
@@ -717,6 +792,7 @@ function Workspace() {
                   </section>
                 ))}
               </div>
+              <OperationsWorkspace />
               <section className="panel">
                 <h3>{t('Infrastructure diagnostics')}</h3>
                 <p>{t('Database health, exit reason, start time and Docker restart count:')}</p>
@@ -725,7 +801,7 @@ function Workspace() {
                 <code>./scripts/db.ps1 logs</code>
                 <p className="muted">
                   {t(
-                    'This phase has synchronous requests. Errors include a request ID; durable attempt history is added with background jobs.',
+                    'Request errors include a request ID. Background tasks preserve their attempts and safe error reasons.',
                   )}
                 </p>
               </section>
@@ -734,7 +810,7 @@ function Workspace() {
         </div>
         <footer>
           {t('Built for a more intentional search.')}
-          <span>{t('Private workspace · Phase 1')}</span>
+          <span>{t('Private workspace · Phase 5')}</span>
         </footer>
       </main>
       {dialog === 'company' && (

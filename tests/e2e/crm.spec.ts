@@ -1,12 +1,18 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { parse } from 'dotenv';
+import { PDFDocument } from 'pdf-lib';
 const settings = parse(readFileSync('.env'));
 test('manual CRM journey persists submission evidence and interview history', async ({ page }) => {
   const name = `Review Company ${Date.now()}`;
   const resumeName = `synthetic-review-${Date.now()}.pdf`;
+  const pdf = await PDFDocument.create();
+  pdf.addPage();
+  const pdfBytes = Buffer.from(await pdf.save());
   await page.goto('/');
-  await page.getByLabel('Owner password').fill(settings.OWNER_PASSWORD);
+  await page
+    .getByLabel('Owner password')
+    .fill(process.env.OWNER_PASSWORD ?? settings.OWNER_PASSWORD);
   await page.getByRole('button', { name: 'Open workspace' }).click();
   await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Companies', exact: true }).click();
@@ -30,13 +36,11 @@ test('manual CRM journey persists submission evidence and interview history', as
   await expect(page.getByRole('heading', { name: 'Activity timeline' })).toBeVisible();
   const applicationUrl = page.url();
   await page.getByRole('button', { name: 'Resumes', exact: true }).click();
-  await page
-    .getByLabel('Resume PDF')
-    .setInputFiles({
-      name: resumeName,
-      mimeType: 'application/pdf',
-      buffer: Buffer.from('%PDF-1.4\n1 0 obj <</Type/Catalog>> endobj\n%%EOF'),
-    });
+  await page.getByLabel('Resume PDF').setInputFiles({
+    name: resumeName,
+    mimeType: 'application/pdf',
+    buffer: pdfBytes,
+  });
   await page.getByRole('button', { name: 'Upload PDF' }).click();
   await expect(page.getByRole('heading', { name: resumeName })).toBeVisible();
   await page.goto(applicationUrl);
@@ -63,6 +67,12 @@ test('manual CRM journey persists submission evidence and interview history', as
   await expect(page.getByText('Draft → Applied', { exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: resumeName })).toBeVisible();
   await page.screenshot({ path: 'test-results/phase1-application.png', fullPage: true });
+  const focusResponse = await page.request.get('/api/v1/today');
+  expect(focusResponse.ok()).toBe(true);
+  const focus = await focusResponse.json();
+  expect(focus.actions.some((action: { title: string }) => action.title === 'Send follow-up')).toBe(
+    true,
+  );
   await page.getByRole('button', { name: 'Applications', exact: true }).click();
   await page.getByLabel('Search applications').fill(name);
   await page.getByLabel('Filter status').selectOption('applied');
@@ -75,7 +85,13 @@ test('manual CRM journey persists submission evidence and interview history', as
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
   await page.screenshot({ path: 'test-results/phase1-mobile.png', fullPage: true });
+  await page.route('**/api/v1/discovery/listings**', (route) =>
+    route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'Sign in to your private workspace.' }),
+    }),
+  );
+  await page.getByRole('button', { name: 'Job search', exact: true }).click();
+  await expect(page.getByLabel('Owner password')).toBeVisible();
 });
-
-
-
