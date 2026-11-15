@@ -38,7 +38,7 @@ jobs:
           sed -i 's/replace_with_a_random_local_password/ci-only-synthetic-password-not-a-secret/; s/replace_with_a_random_session_secret/ci-only-session-secret-with-sufficient-length/; s/replace_with_a_random_owner_password/ci-only-owner-password/' .env
       - run: pnpm db:generate && pnpm db:migrate
       - run: pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: unit-integration-coverage
@@ -51,7 +51,7 @@ jobs:
           pnpm --filter @jobhunt/web start > /tmp/job-web.log 2>&1 &
           for i in $(seq 1 30); do if curl -fsS http://127.0.0.1:43170 >/dev/null && curl -fsS http://127.0.0.1:43171/api/v1/health/ready >/dev/null; then break; fi; sleep 1; done
           pnpm exec playwright test
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: browser-failures
